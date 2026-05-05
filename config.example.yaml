@@ -1,0 +1,27 @@
+# driftwatch example configuration
+# Copy to config.yaml and adjust to your environment.
+
+# Paths to watch for changes. Supports files and directories.
+watch_paths:
+  - /etc/myapp/config.yaml
+  - /etc/nginx/nginx.conf
+  - /etc/prometheus/prometheus.yml
+
+# How often to check for changes (minimum: 1s).
+poll_interval: 30s
+
+# Webhook settings for change notifications.
+webhook:
+  # Required: URL to POST change events to.
+  url: https://hooks.example.com/driftwatch
+
+  # Optional: custom HTTP headers (e.g. for authentication).
+  headers:
+    Authorization: "Bearer your-secret-token"
+    X-Source: "driftwatch"
+
+  # HTTP request timeout for webhook delivery.
+  timeout: 10s
+
+# Log verbosity: debug | info | warn | error
+log_level: info
