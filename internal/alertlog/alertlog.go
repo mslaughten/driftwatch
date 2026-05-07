@@ -62,6 +62,20 @@ func (l *Log) Recent() []Entry {
 	return result
 }
 
+// RecentFailures returns a copy of only the failed alert entries, oldest first.
+func (l *Log) RecentFailures() []Entry {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	var result []Entry
+	for _, e := range l.entries {
+		if !e.Success {
+			result = append(result, e)
+		}
+	}
+	return result
+}
+
 // Len returns the current number of entries.
 func (l *Log) Len() int {
 	l.mu.Lock()
