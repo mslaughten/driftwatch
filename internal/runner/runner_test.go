@@ -24,11 +24,18 @@ func makeConfig(t *testing.T, webhookURL string) *config.Config {
 	}
 }
 
-func TestRunner_StopsCleanly(t *testing.T) {
+// noopServer returns an httptest.Server that responds 200 OK to all requests.
+func noopServer(t *testing.T) *httptest.Server {
+	t.Helper()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer server.Close()
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestRunner_StopsCleanly(t *testing.T) {
+	server := noopServer(t)
 
 	cfg := makeConfig(t, server.URL)
 	r := New(cfg)
