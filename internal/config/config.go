@@ -1,72 +1,45 @@
 package config
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds the driftwatch daemon configuration.
+// Config holds the full driftwatch configuration.
 type Config struct {
-	WatchPaths  []string      `yaml:"watch_paths"`
-	PollInterval time.Duration `yaml:"poll_interval"`
-	Webhook     WebhookConfig `yaml:"webhook"`
-	LogLevel    string        `yaml:"log_level"`
-}
-
-// WebhookConfig holds webhook delivery settings.
-type WebhookConfig struct {
-	URL     string            `yaml:"url"`
-	Headers map[string]string `yaml:"headers"`
-	Timeout time.Duration     `yaml:"timeout"`
+	WatchPaths    []string      `yaml:"watch_paths"`
+	WebhookURL    string        `yaml:"webhook_url"`
+	Interval      time.Duration `yaml:"interval"`
+	SnapshotFile  string        `yaml:"snapshot_file"`
 }
 
 // DefaultConfig returns a Config populated with sensible defaults.
-func DefaultConfig() *Config {
-	return &Config{
-		PollInterval: 30 * time.Second,
-		LogLevel:     "info",
-		Webhook: WebhookConfig{
-			Timeout: 10 * time.Second,
-		},
+func DefaultConfig() Config {
+	return Config{
+		Interval:     30 * time.Second,
+		SnapshotFile: "/var/lib/driftwatch/snapshot.json",
 	}
 }
 
-// Load reads and parses a YAML config file from the given path.
+// Load reads a YAML config file and merges it with defaults.
 func Load(path string) (*Config, error) {
 	cfg := DefaultConfig()
 
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("opening config file %q: %w", path, err)
+		return nil, err
 	}
-	defer f.Close()
-
-	decoder := yaml.NewDecoder(f)
-	decoder.KnownFields(true)
-	if err := decoder.Decode(cfg); err != nil {
-		return nil, fmt.Errorf("parsing config file %q: %w", path, err)
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, err
 	}
-
-	if err := cfg.Validate(); err != nil {
-		return nil, fmt.Errorf("invalid config: %w", err)
+	if len(cfg.WatchPaths) == 0 {
+		return nil, errors.New("config: watch_paths must not be empty")
 	}
-
-	return cfg, nil
-}
-
-// Validate checks that required fields are present and values are sane.
-func (c *Config) Validate() error {
-	if len(c.WatchPaths) == 0 {
-		return fmt.Errorf("watch_paths must contain at least one path")
+	if cfg.WebhookURL == "" {
+		return nil, errors.New("config: webhook_url must not be empty")
 	}
-	if c.Webhook.URL == "" {
-		return fmt.Errorf("webhook.url is required")
-	}
-	if c.PollInterval < time.Second {
-		return fmt.Errorf("poll_interval must be at least 1s, got %s", c.PollInterval)
-	}
-	return nil
+	return &cfg, nil
 }
