@@ -8,59 +8,61 @@ import (
 )
 
 func TestSend_Success(t *testing.T) {
-	var received DriftEvent
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Errorf("expected POST, got %s", r.Method)
-		}
-		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
-			t.Errorf("expected application/json, got %s", ct)
-		}
+	var received Payload
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
-			t.Fatalf("failed to decode body: %v", err)
+			t.Errorf("decode body: %v", err)
 		}
 		w.WriteHeader(http.StatusOK)
 	}))
-	defer server.Close()
+	defer ts.Close()
 
-	n := New(server.URL)
-	err := n.Send("auth-service", "/etc/auth/config.yaml", "abc123", "def456")
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+	n := New(ts.URL, 10, 5)
+	if err := n.Send("/etc/app/config.yaml"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-
-	if received.Service != "auth-service" {
-		t.Errorf("expected service 'auth-service', got %q", received.Service)
+	if received.File != "/etc/app/config.yaml" {
+		t.Errorf("expected file field, got %q", received.File)
 	}
-	if received.OldHash != "abc123" {
-		t.Errorf("expected old hash 'abc123', got %q", received.OldHash)
-	}
-	if received.NewHash != "def456" {
-		t.Errorf("expected new hash 'def456', got %q", received.NewHash)
-	}
-	if received.Detected == "" {
-		t.Error("expected detected_at to be set")
+	if received.Message == "" {
+		t.Error("expected non-empty message")
 	}
 }
 
 func TestSend_Non2xxResponse(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
 	}))
-	defer server.Close()
+	defer ts.Close()
 
-	n := New(server.URL)
-	err := n.Send("svc", "/etc/svc/config.yaml", "aaa", "bbb")
+	n := New(ts.URL, 10, 5)
+	err := n.Send("/etc/app/config.yaml")
 	if err == nil {
-		t.Fatal("expected error for non-2xx response, got nil")
+		t.Fatal("expected error for non-2xx response")
 	}
 }
 
 func TestSend_InvalidURL(t *testing.T) {
-	n := New("http://127.0.0.1:0/no-listener")
-	err := n.Send("svc", "/etc/svc/config.yaml", "aaa", "bbb")
-	if err == nil {
-		t.Fatal("expected error for unreachable URL, got nil")
+	n := New("http://127.0.0.1:0/nope", 10, 5)
+	if err := n.Send("file.yaml"); err == nil {
+		t.Fatal("expected error for unreachable URL")
+	}
+}
+
+func TestSend_RateLimitDrops(t *testing.T) {
+	calls := 0
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	// max=2, rate=0 so no refill
+	n := New(ts.URL, 2, 0)
+	for i := 0; i < 5; i++ {
+		_ = n.Send("file.yaml")
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 webhook calls (rate limited), got %d", calls)
 	}
 }
